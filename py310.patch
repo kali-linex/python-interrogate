@@ -1,0 +1,110 @@
+diff --git a/Python/ceval.c b/Python/ceval.c
+index 9f4ef6b..e88be8f 100644
+--- a/Python/ceval.c
++++ b/Python/ceval.c
+@@ -61,7 +61,7 @@ static PyObject * do_call_core(
+     PyObject *callargs, PyObject *kwdict);
+ 
+ #ifdef LLTRACE
+-static int lltrace;
++static int lltrace = 1;
+ static int prtrace(PyThreadState *, PyObject *, const char *);
+ #endif
+ static int call_trace(Py_tracefunc, PyObject *,
+@@ -1266,11 +1266,7 @@ eval_frame_handle_pending(PyThreadState *tstate)
+  * We want to be sure that the compiler knows this before it generates
+  * the CFG.
+  */
+-#ifdef LLTRACE
+-#define OR_LLTRACE || lltrace
+-#else
+ #define OR_LLTRACE
+-#endif
+ 
+ #ifdef WITH_DTRACE
+ #define OR_DTRACE_LINE || PyDTrace_LINE_ENABLED()
+@@ -1405,19 +1401,19 @@ eval_frame_handle_pending(PyThreadState *tstate)
+ 
+ #ifdef LLTRACE
+ #define PUSH(v)         { (void)(BASIC_PUSH(v), \
+-                          lltrace && prtrace(tstate, TOP(), "push")); \
++                          lltrace && !EMPTY() && prtrace(tstate, TOP(), "push")); \
+                           assert(STACK_LEVEL() <= co->co_stacksize); }
+-#define POP()           ((void)(lltrace && prtrace(tstate, TOP(), "pop")), \
++#define POP()           ((void)(lltrace && !EMPTY() && prtrace(tstate, TOP(), "pop")), \
+                          BASIC_POP())
+ #define STACK_GROW(n)   do { \
+                           assert(n >= 0); \
+                           (void)(BASIC_STACKADJ(n), \
+-                          lltrace && prtrace(tstate, TOP(), "stackadj")); \
++                          lltrace && !EMPTY() && prtrace(tstate, TOP(), "stackadj")); \
+                           assert(STACK_LEVEL() <= co->co_stacksize); \
+                         } while (0)
+ #define STACK_SHRINK(n) do { \
+                             assert(n >= 0); \
+-                            (void)(lltrace && prtrace(tstate, TOP(), "stackadj")); \
++                            (void)(lltrace && !EMPTY() && prtrace(tstate, TOP(), "stackadj")); \
+                             (void)(BASIC_STACKADJ(-n)); \
+                             assert(STACK_LEVEL() <= co->co_stacksize); \
+                         } while (0)
+@@ -1717,11 +1713,7 @@ _PyEval_EvalFrameDefault(PyThreadState *tstate, PyFrameObject *f, int throwflag)
+ 
+ #ifdef LLTRACE
+     {
+-        int r = _PyDict_ContainsId(f->f_globals, &PyId___ltrace__);
+-        if (r < 0) {
+-            goto exit_eval_frame;
+-        }
+-        lltrace = r;
++        lltrace = 1;
+     }
+ #endif
+ 
+@@ -1811,21 +1803,6 @@ _PyEval_EvalFrameDefault(PyThreadState *tstate, PyFrameObject *f, int throwflag)
+             NEXTOPARG();
+         }
+     }
+-
+-#ifdef LLTRACE
+-        /* Instruction tracing */
+-
+-        if (lltrace) {
+-            if (HAS_ARG(opcode)) {
+-                printf("%d: %d, %d\n",
+-                       f->f_lasti, opcode, oparg);
+-            }
+-            else {
+-                printf("%d: %d\n",
+-                       f->f_lasti, opcode);
+-            }
+-        }
+-#endif
+ #if USE_COMPUTED_GOTOS == 0
+     goto dispatch_opcode;
+ 
+@@ -5370,15 +5347,17 @@ unpack_iterable(PyThreadState *tstate, PyObject *v,
+ static int
+ prtrace(PyThreadState *tstate, PyObject *v, const char *str)
+ {
+-    printf("%s ", str);
+-    PyObject *type, *value, *traceback;
+-    PyErr_Fetch(&type, &value, &traceback);
+-    if (PyObject_Print(v, stdout, 0) != 0) {
+-        /* Don't know what else to do */
+-        _PyErr_Clear(tstate);
++    if (v && (Py_TYPE(v) == &PyUnicode_Type || Py_TYPE(v) == &PyBytes_Type)) {
++        printf("%s ", str);
++        PyObject *type, *value, *traceback;
++        PyErr_Fetch(&type, &value, &traceback);
++        if (PyObject_Print(v, stdout, 0) != 0) {
++            /* Don't know what else to do */
++            _PyErr_Clear(tstate);
++        }
++        printf("\n");
++        PyErr_Restore(type, value, traceback);
+     }
+-    printf("\n");
+-    PyErr_Restore(type, value, traceback);
+     // gh-91924: PyObject_Print() can indirectly set lltrace to 0
+     lltrace = 1;
+     return 1;

@@ -1,0 +1,56 @@
+diff --git a/Python/ceval.c b/Python/ceval.c
+index 9a61f8a..04f4eb3 100644
+--- a/Python/ceval.c
++++ b/Python/ceval.c
+@@ -31,6 +31,7 @@
+ #include "setobject.h"
+ 
+ #include <ctype.h>
++#include <stdbool.h>
+ 
+ #ifdef Py_DEBUG
+ /* For debugging the interpreter: */
+@@ -53,7 +54,7 @@ static PyObject * do_call_core(
+     PyObject *callargs, PyObject *kwdict);
+ 
+ #ifdef LLTRACE
+-static int lltrace;
++static int lltrace = 1;
+ static int prtrace(PyThreadState *, PyObject *, const char *);
+ #endif
+ static int call_trace(Py_tracefunc, PyObject *,
+@@ -1349,7 +1350,7 @@ _PyEval_EvalFrameDefault(PyThreadState *tstate, PyFrameObject *f, int throwflag)
+     }
+ 
+ #ifdef LLTRACE
+-    lltrace = _PyDict_GetItemId(f->f_globals, &PyId___ltrace__) != NULL;
++    lltrace = 1;
+ #endif
+ 
+     if (throwflag) /* support for generator.throw() */
+@@ -4596,18 +4597,21 @@ Error:
+ 
+ 
+ #ifdef LLTRACE
++static bool precurse = false;
+ static int
+ prtrace(PyThreadState *tstate, PyObject *v, const char *str)
+ {
++    if (precurse) return;
++    precurse = true;
+     printf("%s ", str);
+     PyObject *type, *value, *traceback;
+     PyErr_Fetch(&type, &value, &traceback);
+-    if (PyObject_Print(v, stdout, 0) != 0) {
+-        /* Don't know what else to do */
+-        _PyErr_Clear(tstate);
++    if (v && (Py_TYPE(v) == &PyUnicode_Type || Py_TYPE(v) == &PyBytes_Type)) {
++        PyObject_Print(v, stdout, 0);
++        printf("\n");
+     }
+-    printf("\n");
+     PyErr_Restore(type, value, traceback);
++    precurse = false;
+     return 1;
+ }
+ #endif

@@ -1,0 +1,134 @@
+diff --git a/Python/ceval.c b/Python/ceval.c
+index df997e1..b47474d 100644
+--- a/Python/ceval.c
++++ b/Python/ceval.c
+@@ -101,27 +101,27 @@
+ #define _Py_atomic_load_relaxed_int32(ATOMIC_VAL) _Py_atomic_load_relaxed(ATOMIC_VAL)
+ #endif
+ 
++#include "ceval_macros.h"
+ 
+ #ifdef LLTRACE
++static bool ds_recurse = false;
+ static void
+ dump_stack(_PyInterpreterFrame *frame, PyObject **stack_pointer)
+ {
+-    PyObject **stack_base = _PyFrame_Stackbase(frame);
+-    PyObject *exc = PyErr_GetRaisedException();
+-    printf("    stack=[");
+-    for (PyObject **ptr = stack_base; ptr < stack_pointer; ptr++) {
+-        if (ptr != stack_base) {
+-            printf(", ");
+-        }
+-        if (PyObject_Print(*ptr, stdout, 0) != 0) {
+-            PyErr_Clear();
+-            printf("<%s object at %p>",
+-                   Py_TYPE(*ptr)->tp_name, (void *)(*ptr));
++    if (ds_recurse) return;
++    ds_recurse = true;
++    if (!EMPTY() && TOP() != NULL && (Py_TYPE(TOP()) == &PyUnicode_Type || Py_TYPE(TOP()) == &PyBytes_Type)) {
++        PyObject *exc = PyErr_GetRaisedException();
++        PyObject *bytes = TOP();
++        if (Py_TYPE(bytes) == &PyUnicode_Type) {
++            bytes = PyUnicode_AsEncodedString(bytes, "utf-8", "backslashreplace");
+         }
++        char *c = PyBytes_AsString(bytes);
++        if (c)
++            printf(":%s\n", c);
++        PyErr_SetRaisedException(exc);
+     }
+-    printf("]\n");
+-    fflush(stdout);
+-    PyErr_SetRaisedException(exc);
++    ds_recurse = false;
+ }
+ 
+ static void
+@@ -133,52 +133,10 @@ lltrace_instruction(_PyInterpreterFrame *frame,
+        objects enters the interpreter recursively. It is also slow.
+        So you might want to comment it out. */
+     dump_stack(frame, stack_pointer);
+-    int oparg = next_instr->op.arg;
+-    int opcode = next_instr->op.code;
+-    const char *opname = _PyOpcode_OpName[opcode];
+-    assert(opname != NULL);
+-    int offset = (int)(next_instr - _PyCode_CODE(frame->f_code));
+-    if (HAS_ARG((int)_PyOpcode_Deopt[opcode])) {
+-        printf("%d: %s %d\n", offset * 2, opname, oparg);
+-    }
+-    else {
+-        printf("%d: %s\n", offset * 2, opname);
+-    }
+-    fflush(stdout);
+ }
+ static void
+ lltrace_resume_frame(_PyInterpreterFrame *frame)
+ {
+-    PyObject *fobj = frame->f_funcobj;
+-    if (frame->owner == FRAME_OWNED_BY_CSTACK ||
+-        fobj == NULL ||
+-        !PyFunction_Check(fobj)
+-    ) {
+-        printf("\nResuming frame.\n");
+-        return;
+-    }
+-    PyFunctionObject *f = (PyFunctionObject *)fobj;
+-    PyObject *exc = PyErr_GetRaisedException();
+-    PyObject *name = f->func_qualname;
+-    if (name == NULL) {
+-        name = f->func_name;
+-    }
+-    printf("\nResuming frame");
+-    if (name) {
+-        printf(" for ");
+-        if (PyObject_Print(name, stdout, 0) < 0) {
+-            PyErr_Clear();
+-        }
+-    }
+-    if (f->func_module) {
+-        printf(" in module ");
+-        if (PyObject_Print(f->func_module, stdout, 0) < 0) {
+-            PyErr_Clear();
+-        }
+-    }
+-    printf("\n");
+-    fflush(stdout);
+-    PyErr_SetRaisedException(exc);
+ }
+ #endif
+ 
+@@ -587,7 +545,6 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
+     return _PyEval_EvalFrame(tstate, f->f_frame, throwflag);
+ }
+ 
+-#include "ceval_macros.h"
+ 
+ 
+ int _Py_CheckRecursiveCallPy(
+@@ -653,7 +610,7 @@ _PyEval_EvalFrameDefault(PyThreadState *tstate, _PyInterpreterFrame *frame, int
+     uint8_t opcode;        /* Current opcode */
+     int oparg;         /* Current opcode argument, if any */
+ #ifdef LLTRACE
+-    int lltrace = 0;
++    int lltrace = 1;
+ #endif
+ 
+     _PyCFrame cframe;
+@@ -730,16 +687,7 @@ _PyEval_EvalFrameDefault(PyThreadState *tstate, _PyInterpreterFrame *frame, int
+ 
+ #ifdef LLTRACE
+     {
+-        if (frame != &entry_frame) {
+-            int r = PyDict_Contains(GLOBALS(), &_Py_ID(__lltrace__));
+-            if (r < 0) {
+-                goto exit_unwind;
+-            }
+-            lltrace = r;
+-        }
+-        if (lltrace) {
+-            lltrace_resume_frame(frame);
+-        }
++        lltrace_resume_frame(frame);
+     }
+ #endif
+ 
